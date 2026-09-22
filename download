@@ -1,0 +1,14 @@
+# Datos fuente con información sensible (agenda de talleres, tablas internas)
+fuentes/
+
+# Respaldos exportados desde el panel
+*-panel.json
+e-fleets-panel*.json
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+__pycache__/
+*.pyc
