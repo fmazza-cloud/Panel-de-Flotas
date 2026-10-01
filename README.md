@@ -39,6 +39,7 @@ datos/
   tabla-vehiculos.js          11.353 vehículos de la Tabla de Vehículos de ETMAN.
   red-talleres.js             85 talleres de la Red EuroTaller.
   codigos-asignados.js        Vinculación modelo del panel → código ETMAN.
+  tarifario-servicios.js      67 operaciones de mano de obra en 6 categorías.
 
 vendor/
   jspdf.umd.min.js            Generación de PDF. MIT.
@@ -72,7 +73,9 @@ Cuando ETMAN publique una nueva Tabla de Vehículos o cambie la agenda de taller
 
 ```bash
 pip install pandas openpyxl
-python3 build/generar-datos.py fuentes/Tabla_Vehiculos.xlsx fuentes/Agenda_Eurotaller_2026.xlsx
+python3 build/generar-datos.py fuentes/Tabla_Vehiculos.xlsx \
+                               fuentes/Agenda_Eurotaller_2026.xlsx \
+                               fuentes/Tarifario_de_Servicios.xlsx
 python3 build/build.py
 ```
 
@@ -94,9 +97,50 @@ corregir o incorporar datos sin que nadie pierda lo que venía cargando.
 | 5 | Vincula los modelos con sus códigos de la Tabla de Vehículos |
 | 6 | Acota la Sprinter 416 a los dos códigos de furgón |
 | 7 | Corrige las cilindradas de las Sprinter según la tabla |
+| 8 | Incorpora el tarifario global de mano de obra |
+| 9 | Elimina del tarifario los renglones condicionales de recargo |
 
 Para agregar una migración se suma un bloque `if (!(d.config.v >= N))` en la rutina de carga
 y se incrementa la versión de la semilla.
+
+---
+
+## Los dos tarifarios
+
+Conviven dos, con propósitos distintos. Es una duplicación conocida y pendiente de unificar.
+
+**Tarifario de servicios** (global, barra lateral). Las 67 operaciones de mano de obra con su
+precio. Es único para toda la red y todas las cuentas, y es el que factura. Se edita desde su
+propia sección o desde el selector del presupuesto.
+
+**Tarifario por modelo** (dentro de cada cuenta). Servicios con su frecuencia de repetición en
+kilómetros, usados para proyectar cuántas intervenciones y cuánta facturación genera la flota
+por año. No se usa para presupuestar.
+
+El ajuste trimestral por IPC alcanza a los dos.
+
+### Precio global contra precio del presupuesto
+
+Editar el precio en el selector de servicios cambia el tarifario **para todos**. Para ajustar
+un presupuesto puntual sin tocar el tarifario, se modifica el renglón en la tabla de cotización.
+
+Los recargos condicionales del archivo original ("si tiene GNC sobre la distribución: sumar")
+se eliminaron deliberadamente: ese ajuste se hace subiendo la mano de obra de la operación en
+el presupuesto, para que el cliente vea un importe y no una suma de condiciones.
+
+---
+
+## Accesos y permisos
+
+No hay usuario ni contraseña dentro del panel: sería un secreto compartido, visible en el código
+fuente y no revocable de a uno. El control de acceso es el de la página publicada, donde cada
+persona entra con su propia cuenta.
+
+Quien tenga permiso de edición modifica datos; quien tenga solo lectura ve una franja de aviso y
+los campos bloqueados. El panel muestra quién está mirando y quién hizo la última modificación.
+
+Limitaciones: todos los editores ven y modifican los mismos datos, no hay permisos por cuenta ni
+por rol, y el registro es de la última edición, no un historial completo.
 
 ---
 
@@ -141,6 +185,9 @@ Usado para vincular los 23 modelos iniciales, documentado en `docs/`:
 - Matriz de capacidad técnica de los talleres, empezando por AMBA.
 - Motorización de la Peugeot Partner Patagónica, único modelo sin código vinculado.
 - Lógica de asignación de taller cruzando capacidad técnica contra cercanía.
+- Precios de las 67 operaciones de mano de obra, hoy en cero.
+- Unificar los dos tarifarios: que la proyección se arme eligiendo operaciones del tarifario
+  global y asignándoles una frecuencia por modelo.
 
 ---
 

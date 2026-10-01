@@ -492,6 +492,28 @@ window.guardarArchivo = async function (nombre, texto) {
     return true;
   } catch (e) { return false; }
 };
+
+/* ── quién está viendo la página ── */
+window.usuarioPanel = (async function () {
+  var vacio = { id: "", nombre: "", puedeEditar: true, conocido: false };
+  try {
+    var u = (window.claude && window.claude.use) ? await window.claude.use("user") : null;
+    if (!u) return vacio;
+    var yo = {};
+    try { yo = (await u.me()) || {}; } catch (e) {}
+    var edita = true;
+    try { var c = u.canEdit(); if (c === false) edita = false; } catch (e) {}
+    return { id: yo.id || "", nombre: yo.name || "", puedeEditar: edita, conocido: true };
+  } catch (e) { return vacio; }
+})();
+
+window.nombresPanel = async function (ids) {
+  try {
+    var u = await window.claude.use("user");
+    return (await u.profiles(ids)) || {};
+  } catch (e) { return {}; }
+};
+
 </script>
 
 <script type="text/babel" data-type="module">
@@ -544,6 +566,7 @@ const T = {
   warn: "#9A6400",
   warnSoft: "#FBF3E0",
 };
+let SOLO_LECTURA = false;
 const FONT = '"Inter","Helvetica Neue",Helvetica,Arial,sans-serif';
 const num = { fontVariantNumeric: "tabular-nums" };
 
@@ -720,6 +743,74 @@ const CUENTAS_INICIALES = [
   "Always",
 ];
 
+const TARIFARIO_SEED = [["SERVICIO","Cambio de aceite, filtro de aceite, filtro de aire (AUTO) (incluye compl niv)"],
+["SERVICIO","Cambio de aceite y todos los filtros (AUTO NAFTA) (incluye compl niv)"],
+["SERVICIO","Cambio de aceite y todos los filtros (AUTO DIESEL) (incluye compl niv)"],
+["SERVICIO","Cambio de aceite, filtro de aceite, filtro de aire (CAMIONETA) (incluye compl niv)"],
+["SERVICIO","Cambio de aceite y todos los filtros (CAMIONETA NAFTA) (incluye compl niv)"],
+["SERVICIO","Cambio de aceite y todos los filtros (CAMIONETA DIESEL) (incluye compl niv)"],
+["ENCENDIDO","Cambio de bujias simple tipo Corsa, Suran"],
+["ENCENDIDO","Cambio de bujias complejidad media tipo Fire o bobinas individuales simples"],
+["ENCENDIDO","Cambio de bujias complejo tipo Fire con GNC arriba o similares"],
+["FRENOS","Pastillas de freno delanteras o traseras simples"],
+["FRENOS","Pastillas y discos de freno delanteros"],
+["FRENOS","Pastillas de freno traseras piston a rosca"],
+["FRENOS","Pastillas de freno traseras, freno de mano electrico"],
+["FRENOS","Frenos traseros sin cilindros"],
+["FRENOS","Frenos traseros con cilindros"],
+["FRENOS","Cilindro de freno (cada uno, sumar purgado)"],
+["FRENOS","Flexible de freno (cada uno, sumar purgado)"],
+["FRENOS","Purgado sistema de freno"],
+["FRENOS","Desmontaje y montaje de calipers de freno"],
+["FRENOS","Bomba de freno (precio minimo en adelante) (sumar purgado del sistema)"],
+["FRENOS","Servo freno (precio minimo en adelante) (sumar purgado)"],
+["TREN DELANTERO","Ruleman delantero"],
+["TREN DELANTERO","Ruleman trasero"],
+["TREN DELANTERO","Amortiguador delantero simple con 2 bulones abajo"],
+["TREN DELANTERO","Amortiguador delantero simple sin bulones abajo tipo brida"],
+["TREN DELANTERO","Amortiguador delantero complejo (alta gama, escobillas, plastico cobertor)"],
+["TREN DELANTERO","Amortiguador trasero 2 ojos"],
+["TREN DELANTERO","Amortiguador trasero 1 ojo + espiga arriba"],
+["TREN DELANTERO","Cambio parrilla completa"],
+["TREN DELANTERO","Bujes de parrilla"],
+["TREN DELANTERO","Bujes de barra estabilizadora simples tipo Corsa"],
+["TREN DELANTERO","Bujes de barra estabilizadora complejidad media tipo Suran"],
+["TREN DELANTERO","Bujes de barra estabilizadora complejo tipo Fluence"],
+["TREN DELANTERO","Bieleta (cada una)"],
+["TREN DELANTERO","Rotula con tornillos"],
+["TREN DELANTERO","Rotula remachada"],
+["TREN DELANTERO","Rotula clavada"],
+["TREN DELANTERO","Brazo rotula"],
+["TREN DELANTERO","Axial (uno solo) (incluye fuelle y extremo)"],
+["TREN DELANTERO","Axiales (juego) (incluye fuelles y extremos)"],
+["TREN DELANTERO","Extremo (uno solo)"],
+["TREN DELANTERO","Extremos (juego)"],
+["TREN DELANTERO","Caja de direccion (desmontaje y montaje) (hacer descuento si es simple)"],
+["DISTRIBUCION","Distribucion Nafta 8v simple Fiat Duna, 147, Gol"],
+["DISTRIBUCION","Distribucion Nafta 8v Fire viejo, Corsa, etc"],
+["DISTRIBUCION","Distribucion Nafta 8v Fire EVO, Mobi, GM Nuevos Onix, Prisma, Spin"],
+["DISTRIBUCION","Distribucion Nafta 16v simple Peugeot, Citroen, Clio 1.2 16v"],
+["DISTRIBUCION","Distribucion Nafta 16v complejo / K4M '08-> / Kinetic / MSI / Tracker"],
+["DISTRIBUCION","Distribucion Nafta K4M <-'08, F4R 2.0, Importados"],
+["DISTRIBUCION","Distribucion Nafta Dragon, GM, PSA (correa baño de aceite, sacar carter)"],
+["DISTRIBUCION","Distribucion Nafta THP"],
+["DISTRIBUCION","Distribucion Nafta TFSI 2.0 transversal"],
+["DISTRIBUCION","Distribucion Nafta TFSI 2.0 longitudinal"],
+["DISTRIBUCION","Distribucion Diesel simple 147, Duna, Gol"],
+["DISTRIBUCION","Distribucion Diesel DW8, XUD9, Siena TD"],
+["DISTRIBUCION","Distribucion Diesel HDI PSA"],
+["DISTRIBUCION","Distribucion Diesel TDI VAG alta gama"],
+["DISTRIBUCION","Distribucion Diesel motor Mitsubishi 2.5 y Hilux viejas"],
+["DISTRIBUCION","Distribucion Diesel Hilux '05 -->"],
+["DISTRIBUCION","Cambio de bomba de agua simple, purgado, control electro (sumar distr)"],
+["EMBRAGUE","Embrague simple VW Gol"],
+["EMBRAGUE","Embrague simple Siena naftero o similar, camionetas viejas simples"],
+["EMBRAGUE","Embrague complejo Renault o similar o crapodina hidraulica"],
+["EMBRAGUE","Embrague camionetas 4x2"],
+["EMBRAGUE","Embrague camionetas 4x4"],
+["EMBRAGUE","Bomba de embrague (precio minimo en adelante segun complejidad)"],
+["EMBRAGUE","Bombin de embrague (precio minimo en adelante segun complejidad)"]];
+
 /* Flota Asociación de los Testigos de Jehová — 136 unidades (detalle recibido por PDF) */
 const TJ = [
   ["CHEVROLET", "CLASSIC", "", "1.4", "Nafta", "2015", 5, 20000, 10000, 60000, ""],
@@ -752,6 +843,7 @@ const modelosTJ = () =>
 
 const seed = {
   red: redInicial(),
+  tarifario: tarifarioInicial(),
   clientes: [
     {
       id: uid(),
@@ -771,7 +863,7 @@ const seed = {
       return c;
     }),
   ],
-  config: { v: 7, ipcAcum: 0, ultimoAjuste: null, historial: [] },
+  config: { v: 9, ipcAcum: 0, ultimoAjuste: null, historial: [] },
 };
 
 /* ─────────────────────────── helpers ─────────────────────────── */
@@ -833,6 +925,7 @@ const Field = ({ value, onChange, align = "left", width, mono, placeholder }) =>
   <input
     value={value ?? ""}
     placeholder={placeholder}
+    readOnly={SOLO_LECTURA}
     onChange={(e) => onChange(e.target.value)}
     className="bg-transparent outline-none py-1 px-1 rounded-sm"
     style={{
@@ -901,6 +994,8 @@ function PanelFlotas() {
   const [vista, setVista] = useState("cuenta");
   const [modeloAbierto, setModeloAbierto] = useState(null);
   const [estado, setEstado] = useState("cargando");
+  const [perm, setPerm] = useState({ puedeEditar: true, nombre: "", conocido: false });
+  const [editorPrevio, setEditorPrevio] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -976,6 +1071,18 @@ function PanelFlotas() {
           ...c,
           modelos: (c.modelos || []).map((m) => ({ ...m, codigos: m.codigos || [] })),
         }));
+        if (!(d.config.v >= 8)) {
+          const previos = {};
+          (d.tarifario || []).forEach((t) => { previos[t.desc] = t.mo; });
+          d.tarifario = tarifarioInicial().map((t) => ({ ...t, mo: previos[t.desc] || 0 }));
+          d.config = { ...d.config, v: 8 };
+        }
+        if (!(d.config.v >= 9)) {
+          const esRecargo = (t) => /^si (el vehiculo|hay que)/i.test(String(t || ""));
+          d.tarifario = (d.tarifario || []).filter((t) => !esRecargo(t.desc));
+          d.config = { ...d.config, v: 9 };
+        }
+        if (!d.tarifario || !d.tarifario.length) d.tarifario = tarifarioInicial();
         d.clientes = d.clientes.map((c) =>
           esTJ(c) && !(c.modelos || []).length ? { ...c, modelos: modelosTJ() } : c);
         d.clientes = (d.clientes || []).map((c) => ({
@@ -996,11 +1103,23 @@ function PanelFlotas() {
   }, []);
 
   useEffect(() => {
+    window.usuarioPanel.then((u) => { SOLO_LECTURA = !u.puedeEditar; setPerm(u); });
+  }, []);
+
+  useEffect(() => {
+    const id = data && data._editadoPor;
+    if (!id) { setEditorPrevio(""); return; }
+    window.nombresPanel([id]).then((ps) => setEditorPrevio((ps[id] && ps[id].name) || ""));
+  }, [data && data._editadoPor]);
+
+  useEffect(() => {
     if (!data) return;
+    if (SOLO_LECTURA) { setEstado("lectura"); return; }
     const t = setTimeout(async () => {
       try {
         setEstado("guardando");
-        await window.storage.set("efleets:panel", JSON.stringify(data));
+        const sello = { ...data, _editadoPor: perm.id || "", _editadoEn: new Date().toISOString() };
+        await window.storage.set("efleets:panel", JSON.stringify(sello));
         setEstado("guardado");
       } catch {
         setEstado("error");
@@ -1017,6 +1136,8 @@ function PanelFlotas() {
 
   const upCliente = (fn) =>
     setData((d) => ({ ...d, clientes: d.clientes.map((c) => (c.id === selId ? fn(c) : c)) }));
+  const upTarifario = (id, mo) =>
+    setData((d) => ({ ...d, tarifario: (d.tarifario || []).map((t) => (t.id === id ? { ...t, mo } : t)) }));
   const upModelo = (mid, fn) =>
     upCliente((c) => ({ ...c, modelos: c.modelos.map((m) => (m.id === mid ? fn(m) : m)) }));
 
@@ -1047,8 +1168,17 @@ function PanelFlotas() {
           <span style={{ color: "#9FB0BC", fontSize: 12 }}>Canal de Flotas · Red EuroTaller</span>
         </div>
         <div className="flex items-center gap-3">
-          <span style={{ color: "#9FB0BC", fontSize: 11 }}>
-            {estado === "guardando" ? "Guardando…" : estado === "error" ? "No se pudo guardar" : "Cambios guardados"}
+          <span style={{ color: "#9FB0BC", fontSize: 11, textAlign: "right" }}>
+            {perm.nombre && <span style={{ color: "#CFDAE2" }}>{perm.nombre} · </span>}
+            {estado === "lectura" ? "Solo lectura"
+              : estado === "guardando" ? "Guardando…"
+              : estado === "error" ? "No se pudo guardar" : "Cambios guardados"}
+            {editorPrevio && (
+              <span style={{ display: "block", fontSize: 10 }}>
+                Última edición: {editorPrevio}
+                {data._editadoEn ? " · " + fechaAR(String(data._editadoEn).slice(0, 10)) : ""}
+              </span>
+            )}
           </span>
           <button
             onClick={async () => {
@@ -1066,6 +1196,16 @@ function PanelFlotas() {
         </div>
       </div>
 
+      {!perm.puedeEditar && (
+        <div className="px-5 py-2 flex items-center gap-2"
+          style={{ background: T.warnSoft, borderBottom: "1px solid #E6D3A8" }}>
+          <AlertCircle size={15} style={{ color: T.warn }} />
+          <span style={{ fontSize: 12.5, color: "#6B4A05" }}>
+            Estás en modo lectura: podés consultar y exportar todo, pero los cambios no se guardan.
+            Pedí permiso de edición a quien te compartió el panel.
+          </span>
+        </div>
+      )}
       <div className="flex" style={{ alignItems: "stretch" }}>
         {/* clientes */}
         <aside style={{ width: 232, background: T.paper, borderRight: `1px solid ${T.line}`, minHeight: "calc(100vh - 56px)" }} className="shrink-0">
@@ -1108,6 +1248,20 @@ function PanelFlotas() {
           <div className="px-4 pt-5 pb-2" style={{ borderTop: `1px solid ${T.lineSoft}`, marginTop: 8 }}>
             <span style={{ fontSize: 12, color: T.steel }}>Red</span>
           </div>
+          <button
+            onClick={() => setVista("tarifario")}
+            className="w-full text-left px-4 py-2.5"
+            style={{
+              background: vista === "tarifario" ? T.accentSoft : "transparent",
+              borderLeft: `3px solid ${vista === "tarifario" ? T.accent : "transparent"}`,
+              borderBottom: `1px solid ${T.lineSoft}`,
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: vista === "tarifario" ? 600 : 500 }}>Tarifario de servicios</div>
+            <div style={{ fontSize: 11, color: T.steel, ...num }}>
+              {(data.tarifario || []).filter((t) => t.mo > 0).length} de {(data.tarifario || []).length} con precio
+            </div>
+          </button>
           <button
             onClick={() => setVista("red")}
             className="w-full text-left px-4 py-2.5"
@@ -1237,7 +1391,7 @@ function PanelFlotas() {
                     abierto={modeloAbierto ?? cliente.modelos[0]?.id} setAbierto={setModeloAbierto} />
                 )}
                 {tab === "proyeccion" && <TabProyeccion cliente={cliente} k={k} upModelo={upModelo} />}
-                {tab === "presupuesto" && <TabPresupuesto cliente={cliente} upCliente={upCliente} config={data.config} red={data.red} />}
+                {tab === "presupuesto" && <TabPresupuesto cliente={cliente} upCliente={upCliente} config={data.config} red={data.red} tarifario={data.tarifario || []} upTarifario={upTarifario} />}
                 {tab === "cuenta" && <TabCuenta cliente={cliente} k={k} upCliente={upCliente} />}
                 {tab === "ajustes" && <TabAjustes data={data} setData={setData} />}
               </div>
@@ -1847,6 +2001,7 @@ function TabAjustes({ data, setData }) {
     const f = 1 + pct / 100;
     setData((d) => ({
       ...d,
+      tarifario: (d.tarifario || []).map((t) => ({ ...t, mo: Math.round((t.mo || 0) * f) })),
       clientes: d.clientes.map((c) => ({
         ...c,
         modelos: c.modelos.map((m) => ({
@@ -2145,11 +2300,15 @@ const pdfPresupuesto = (p, { cliente, modelo, taller, cto, items, total, config 
     y += 1.6;
   });
 
-  salto(14);
-  txt("MANO DE OBRA", cDet, y, { s: 7.5 });
-  txt(int(p.manoObra), cPre, y, { s: 7.5, al: "right" });
-  txt(int(p.manoObra), cSub, y, { s: 7.5, al: "right" });
-  y += 4; linea(y); y += 7;
+  if (p.manoObra > 0) {
+    salto(14);
+    txt("M.O.", cCod, y, { s: 7.5 });
+    txt("MANO DE OBRA ADICIONAL", cDet, y, { s: 7.5 });
+    txt(int(p.manoObra), cPre, y, { s: 7.5, al: "right" });
+    txt(int(p.manoObra), cSub, y, { s: 7.5, al: "right" });
+    y += 4;
+  }
+  linea(y); y += 7;
 
   txt("TOTAL PRESUPUESTO", 150, y, { s: 9.5, b: true, col: C_NARANJA, al: "right" });
   txt(ars(total), R, y, { s: 13, b: true, col: C_NARANJA, al: "right" });
@@ -2228,7 +2387,7 @@ const pdfTarifario = (p, cliente) => {
   return doc;
 };
 
-function TabPresupuesto({ cliente, upCliente, config, red = [] }) {
+function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], upTarifario }) {
   const guardado = cliente.presu;
   const p = guardado && guardado.v === 2 ? guardado : nuevoPresu(cliente);
   const setP = (fn) => upCliente((c) => {
@@ -2247,30 +2406,11 @@ function TabPresupuesto({ cliente, upCliente, config, red = [] }) {
   const total = subRep + (p.manoObra || 0);
 
   const elegido = (sid) => items.some((i) => i.srvId === sid);
-  const toggle = (s) =>
-    setP((x) => elegido(s.id)
-      ? { ...x, items: x.items.filter((i) => i.srvId !== s.id), manoObra: Math.max(0, (x.manoObra || 0) - (s.mo || 0)) }
-      : { ...x,
-          items: [...x.items, { id: uid(), srvId: s.id, marca: "", cod: s.cod, desc: s.desc, cant: 1, precio: s.rep || 0 }],
-          manoObra: (x.manoObra || 0) + (s.mo || 0) });
-
-  const vence = (s) => {
-    const km = p.km || 0;
-    if (!km || !s.frec) return false;
-    const resto = km % s.frec;
-    return km >= s.frec * 0.75 && (resto <= 3000 || s.frec - resto <= 3000);
-  };
-
-  const sugerir = () => {
-    if (!modelo) return;
-    const nuevos = modelo.servicios.filter(vence).filter((s) => !elegido(s.id));
-    if (!nuevos.length) return avisar("No hay servicios pendientes para ese kilometraje.");
-    setP((x) => ({
-      ...x,
-      items: [...x.items, ...nuevos.map((s) => ({ id: uid(), srvId: s.id, marca: "", cod: s.cod, desc: s.desc, cant: 1, precio: s.rep || 0 }))],
-      manoObra: (x.manoObra || 0) + nuevos.reduce((a, s) => a + (s.mo || 0), 0),
-    }));
-  };
+  const toggle = (t) =>
+    setP((x) => elegido(t.id)
+      ? { ...x, items: x.items.filter((i) => i.srvId !== t.id) }
+      : { ...x, items: [...x.items,
+          { id: uid(), srvId: t.id, tipo: "mo", marca: "", cod: "M.O.", desc: t.desc, cant: 1, precio: t.mo || 0 }] });
 
   const setItem = (id, campo, val) =>
     setP((x) => ({ ...x, items: x.items.map((i) => (i.id === id ? { ...i, [campo]: val } : i)) }));
@@ -2420,35 +2560,17 @@ function TabPresupuesto({ cliente, upCliente, config, red = [] }) {
             </div>
           </div>
 
-          {p.tipo === "intervencion" && modelo && (
-            <div style={{ background: T.paper, border: `1px solid ${T.line}` }} className="mt-4">
-              <div className="px-4 py-3 flex items-center justify-between gap-2 flex-wrap" style={{ borderBottom: `1px solid ${T.line}` }}>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 600 }}>Servicios a incluir</div>
-                  <div style={{ fontSize: 12, color: T.steel }}>En naranja, los que corresponden según el kilometraje.</div>
-                </div>
-                <Btn small icon={Wand2} onClick={sugerir}>Sugerir según km</Btn>
-              </div>
-              <div className="px-4 py-2" style={{ maxHeight: 240, overflowY: "auto" }}>
-                {modelo.servicios.map((s) => {
-                  const due = vence(s);
-                  return (
-                    <label key={s.id} className="flex items-start gap-2 py-1.5" style={{ borderBottom: `1px solid ${T.lineSoft}`, cursor: "pointer" }}>
-                      <input type="checkbox" checked={elegido(s.id)} onChange={() => toggle(s)} style={{ marginTop: 3 }} />
-                      <span style={{ fontSize: 12.5, flex: 1, color: due ? T.accent : T.ink, fontWeight: due ? 600 : 400 }}>
-                        {s.cod} · {s.desc}
-                      </span>
-                      <span style={{ ...num, fontSize: 12.5, color: T.steel }}>{ars((s.mo || 0) + (s.rep || 0))}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              <div className="px-4 py-2" style={{ borderTop: `1px solid ${T.line}` }}>
-                <Btn small icon={Plus} onClick={() => setP((x) => ({ ...x, items: [...x.items, { id: uid(), srvId: null, marca: "", cod: "", desc: "", cant: 1, precio: 0 }] }))}>
-                  Agregar renglón manual
-                </Btn>
-              </div>
-            </div>
+          {p.tipo === "intervencion" && (
+            <SelectorServicios
+              tarifario={tarifario}
+              upTarifario={upTarifario}
+              elegido={elegido}
+              toggle={toggle}
+              agregarManual={() => setP((x) => ({
+                ...x,
+                items: [...x.items, { id: uid(), srvId: null, tipo: "rep", marca: "", cod: "", desc: "", cant: 1, precio: 0 }],
+              }))}
+            />
           )}
 
           {p.tipo === "intervencion" && (
@@ -2487,7 +2609,7 @@ function TabPresupuesto({ cliente, upCliente, config, red = [] }) {
               </div>
               <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-3" style={{ background: T.surface }}>
                 <div className="flex items-center gap-2">
-                  <span style={{ fontSize: 12.5, color: T.steel }}>Mano de obra</span>
+                  <span style={{ fontSize: 12.5, color: T.steel }}>Mano de obra adicional</span>
                   <input value={p.manoObra}
                     onChange={(e) => setP((x) => ({ ...x, manoObra: Number(e.target.value.replace(/\D/g, "")) || 0 }))}
                     className="outline-none rounded-sm px-2 py-1"
@@ -2599,13 +2721,15 @@ function TabPresupuesto({ cliente, upCliente, config, red = [] }) {
                       <Celda align="right">{int((i.cant || 0) * (i.precio || 0))}</Celda>
                     </tr>
                   ))}
-                  <tr>
-                    <Celda></Celda><Celda></Celda>
-                    <Celda>MANO DE OBRA</Celda>
-                    <Celda align="right"></Celda>
-                    <Celda align="right">{int(p.manoObra)}</Celda>
-                    <Celda align="right">{int(p.manoObra)}</Celda>
-                  </tr>
+                  {p.manoObra > 0 && (
+                    <tr>
+                      <Celda></Celda><Celda>M.O.</Celda>
+                      <Celda>MANO DE OBRA ADICIONAL</Celda>
+                      <Celda align="right"></Celda>
+                      <Celda align="right">{int(p.manoObra)}</Celda>
+                      <Celda align="right">{int(p.manoObra)}</Celda>
+                    </tr>
+                  )}
                 </tbody>
               </table>
 
@@ -2834,6 +2958,172 @@ function TabRed({ data, setData }) {
 
 
 ReactDOM.createRoot(document.getElementById("raiz")).render(<PanelFlotas />);
+/* ─────────────────────────── selector de servicios ─────────────────────────── */
+function SelectorServicios({ tarifario, upTarifario, elegido, toggle, agregarManual }) {
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState("");
+
+  const vis = tarifario.filter((t) => {
+    if (cat && t.cat !== cat) return false;
+    if (!q) return true;
+    return (t.cat + " " + t.desc).toLowerCase().includes(q.toLowerCase());
+  });
+  const porCat = CATEGORIAS.filter((c) => vis.some((t) => t.cat === c));
+  const sinPrecio = tarifario.filter((t) => !t.mo).length;
+
+  return (
+    <div style={{ background: T.paper, border: `1px solid ${T.line}` }} className="mt-4">
+      <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.line}` }}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Servicios a incluir</div>
+            <div style={{ fontSize: 12, color: T.steel }}>
+              Tarifario de mano de obra. Los precios se editan acá mismo y valen para todas las cuentas.
+            </div>
+          </div>
+          <Btn small icon={Plus} onClick={agregarManual}>Renglón manual</Btn>
+        </div>
+        <div className="flex gap-2 mt-3 flex-wrap">
+          <select value={cat} onChange={(e) => setCat(e.target.value)}
+            className="outline-none rounded-sm px-2 py-1.5"
+            style={{ fontSize: 12.5, border: `1px solid ${T.line}`, background: T.paper }}>
+            <option value="">Todas las categorías</option>
+            {CATEGORIAS.map((c) => <option key={c}>{c}</option>)}
+          </select>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar operación"
+            className="flex-1 outline-none rounded-sm px-2 py-1.5"
+            style={{ fontSize: 12.5, border: `1px solid ${T.line}`, minWidth: 180 }} />
+        </div>
+        {sinPrecio > 0 && (
+          <div style={{ fontSize: 11.5, color: T.warn, marginTop: 6 }}>
+            {sinPrecio} de {tarifario.length} operaciones todavía no tienen precio cargado.
+          </div>
+        )}
+      </div>
+
+      <div style={{ maxHeight: 340, overflowY: "auto" }}>
+        {porCat.length === 0 && (
+          <div className="px-4 py-4" style={{ fontSize: 12.5, color: T.steel }}>
+            Ninguna operación coincide con el filtro.
+          </div>
+        )}
+        {porCat.map((c) => (
+          <div key={c}>
+            <div className="px-4 py-1.5" style={{ background: T.surface, borderBottom: `1px solid ${T.lineSoft}` }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: T.accent, letterSpacing: "0.04em" }}>{c}</span>
+            </div>
+            {vis.filter((t) => t.cat === c).map((t) => (
+              <div key={t.id} className="flex items-center gap-2 px-4 py-1.5"
+                style={{ borderBottom: `1px solid ${T.lineSoft}` }}>
+                <input type="checkbox" checked={elegido(t.id)} onChange={() => toggle(t)} />
+                <span style={{ fontSize: 12.5, flex: 1, minWidth: 160 }}>{t.desc}</span>
+                <input
+                  value={t.mo || 0}
+                  onChange={(e) => upTarifario(t.id, Number(e.target.value.replace(/\D/g, "")) || 0)}
+                  className="outline-none rounded-sm px-1.5 py-0.5"
+                  style={{ ...num, width: 92, textAlign: "right", fontSize: 12.5,
+                           border: `1px solid ${t.mo ? T.line : T.accent}`, color: T.ink }} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── tarifario global ─────────────────────────── */
+function TabTarifarioGlobal({ data, setData }) {
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState("");
+  const [aviso, setAviso] = useState("");
+  const t = data.tarifario || [];
+
+  const up = (id, mo) =>
+    setData((d) => ({ ...d, tarifario: d.tarifario.map((x) => (x.id === id ? { ...x, mo } : x)) }));
+
+  const vis = t.filter((x) => {
+    if (cat && x.cat !== cat) return false;
+    if (!q) return true;
+    return (x.cat + " " + x.desc).toLowerCase().includes(q.toLowerCase());
+  });
+  const cargados = t.filter((x) => x.mo > 0).length;
+  const prom = cargados ? t.reduce((a, x) => a + (x.mo || 0), 0) / cargados : 0;
+
+  const exportar = () =>
+    exportarTabla("tarifario-servicios.xlsx", [
+      ["TARIFARIO DE SERVICIOS · MANO DE OBRA"],
+      ["Fecha", fechaAR(hoy())],
+      ["Ajuste acumulado por IPC", `${(data.config.ipcAcum || 0).toFixed(2)} %`],
+      [],
+      ["Categoría", "Servicio / Operación", "Mano de obra"],
+      ...t.map((x) => [x.cat, x.desc, x.mo || 0]),
+    ], (m) => { setAviso(m); setTimeout(() => setAviso(""), 4000); });
+
+  return (
+    <div>
+      <div style={{ background: T.paper, borderBottom: `1px solid ${T.line}` }} className="px-5 py-4">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em" }}>Tarifario de servicios</div>
+            <div style={{ fontSize: 12.5, color: T.steel }}>
+              Precios de mano de obra por operación. Son únicos para toda la red y todas las cuentas.
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {aviso && <span style={{ fontSize: 12, color: T.ok }}>{aviso}</span>}
+            <Btn icon={Download} onClick={exportar}>Exportar a Excel</Btn>
+          </div>
+        </div>
+        <div className="flex flex-wrap mt-3">
+          <Stat label="Operaciones" value={int(t.length)} sub={`${CATEGORIAS.length} categorías`} accent />
+          <Stat label="Con precio cargado" value={`${cargados} / ${t.length}`}
+            sub={`${Math.round((cargados / (t.length || 1)) * 100)}% del tarifario`} />
+          <Stat label="Precio promedio" value={ars(prom)} sub="sobre las operaciones cargadas" />
+          <Stat label="Ajuste acumulado" value={`${(data.config.ipcAcum || 0).toFixed(2)} %`}
+            sub={data.config.ultimoAjuste ? `desde ${fechaAR(data.config.ultimoAjuste)}` : "sin ajustes aplicados"} />
+        </div>
+      </div>
+
+      <div className="p-5">
+        <div style={{ background: T.paper, border: `1px solid ${T.line}` }}>
+          <div className="px-4 py-3 flex gap-2 flex-wrap" style={{ borderBottom: `1px solid ${T.line}` }}>
+            <select value={cat} onChange={(e) => setCat(e.target.value)}
+              className="outline-none rounded-sm px-2 py-1.5"
+              style={{ fontSize: 12.5, border: `1px solid ${T.line}`, background: T.paper }}>
+              <option value="">Todas las categorías</option>
+              {CATEGORIAS.map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar operación"
+              className="flex-1 outline-none rounded-sm px-2 py-1.5"
+              style={{ fontSize: 12.5, border: `1px solid ${T.line}`, minWidth: 220 }} />
+          </div>
+          <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr><Th w={150}>Categoría</Th><Th>Servicio / Operación</Th><Th align="right" w={130}>Mano de obra</Th></tr>
+            </thead>
+            <tbody>
+              {vis.map((x) => (
+                <tr key={x.id}>
+                  <Td><span style={{ fontSize: 11.5, color: T.steel }}>{x.cat}</span></Td>
+                  <Td>{x.desc}</Td>
+                  <Td align="right">
+                    <input value={x.mo || 0}
+                      onChange={(e) => up(x.id, Number(e.target.value.replace(/\D/g, "")) || 0)}
+                      className="outline-none rounded-sm px-1.5 py-0.5"
+                      style={{ ...num, width: 104, textAlign: "right", fontSize: 13,
+                               border: `1px solid ${x.mo ? T.line : T.accent}`, color: T.ink }} />
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 </script>
 </body>
 </html>
