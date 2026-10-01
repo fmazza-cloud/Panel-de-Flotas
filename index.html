@@ -873,7 +873,7 @@ const seed = {
       return c;
     }),
   ],
-  config: { v: 10, ipcAcum: 0, ultimoAjuste: null, historial: [] },
+  config: { v: 10, margenDefault: 0, ipcAcum: 0, ultimoAjuste: null, historial: [] },
 };
 
 /* ─────────────────────────── helpers ─────────────────────────── */
@@ -1140,6 +1140,7 @@ function PanelFlotas() {
         if (!d.tarifario || !d.tarifario.length) d.tarifario = tarifarioInicial();
         d.clientes = d.clientes.map((c) => ({ ...c, historial: c.historial || [] }));
         if (!(d.config.v >= 10)) d.config = { ...d.config, v: 10 };
+        if (d.config.margenDefault === undefined) d.config = { ...d.config, margenDefault: 0 };
         d.clientes = d.clientes.map((c) =>
           esTJ(c) && !(c.modelos || []).length ? { ...c, modelos: modelosTJ() } : c);
         d.clientes = (d.clientes || []).map((c) => ({
@@ -1193,6 +1194,7 @@ function PanelFlotas() {
 
   const upCliente = (fn) =>
     setData((d) => ({ ...d, clientes: d.clientes.map((c) => (c.id === selId ? fn(c) : c)) }));
+  const upConfig = (campo, val) => setData((d) => ({ ...d, config: { ...d.config, [campo]: val } }));
   const upTarifario = (id, mo) =>
     setData((d) => ({ ...d, tarifario: (d.tarifario || []).map((t) => (t.id === id ? { ...t, mo } : t)) }));
   const upModelo = (mid, fn) =>
@@ -1449,7 +1451,7 @@ function PanelFlotas() {
                     abierto={modeloAbierto ?? cliente.modelos[0]?.id} setAbierto={setModeloAbierto} />
                 )}
                 {tab === "proyeccion" && <TabProyeccion cliente={cliente} k={k} upModelo={upModelo} upCliente={upCliente} />}
-                {tab === "presupuesto" && <TabPresupuesto cliente={cliente} upCliente={upCliente} config={data.config} red={data.red} tarifario={data.tarifario || []} upTarifario={upTarifario} />}
+                {tab === "presupuesto" && <TabPresupuesto cliente={cliente} upCliente={upCliente} config={data.config} red={data.red} tarifario={data.tarifario || []} upTarifario={upTarifario} upConfig={upConfig} />}
                 {tab === "historial" && <TabHistorial cliente={cliente} upCliente={upCliente} red={data.red} />}
                 {tab === "cuenta" && <TabCuenta cliente={cliente} k={k} upCliente={upCliente} />}
                 {tab === "ajustes" && <TabAjustes data={data} setData={setData} />}
@@ -2478,7 +2480,7 @@ const pdfTarifario = (p, cliente) => {
   return doc;
 };
 
-function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], upTarifario }) {
+function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], upTarifario, upConfig }) {
   const guardado = cliente.presu;
   const p = guardado && guardado.v === 2 ? guardado : nuevoPresu(cliente);
   const setP = (fn) => upCliente((c) => {
@@ -2493,7 +2495,16 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
   const cto = principal(cliente);
   const items = p.items || [];
 
-  const subRep = items.reduce((a, i) => a + (i.cant || 0) * (i.precio || 0), 0);
+  const margenDef = config && config.margenDefault ? config.margenDefault : 0;
+  const conPrecio = (i) => {
+    const costo = i.costo !== undefined ? i.costo : (i.precio || 0);
+    const margen = i.margen !== undefined ? i.margen : 0;
+    return { ...i, costo, margen, precio: Math.round(costo * (1 + margen / 100)) };
+  };
+  const lineas = items.map(conPrecio);
+  const subCosto = lineas.reduce((a, i) => a + (i.cant || 0) * i.costo, 0);
+  const subRep = lineas.reduce((a, i) => a + (i.cant || 0) * i.precio, 0);
+  const utilidad = subRep - subCosto;
   const total = subRep + (p.manoObra || 0);
 
   const elegido = (sid) => items.some((i) => i.srvId === sid);
@@ -2501,10 +2512,29 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
     setP((x) => elegido(t.id)
       ? { ...x, items: x.items.filter((i) => i.srvId !== t.id) }
       : { ...x, items: [...x.items,
-          { id: uid(), srvId: t.id, tipo: "mo", marca: "", cod: "M.O.", desc: t.desc, cant: 1, precio: t.mo || 0 }] });
+          { id: uid(), srvId: t.id, tipo: "mo", marca: "", cod: "M.O.", desc: t.desc, cant: 1,
+            costo: t.mo || 0, margen: margenDef, precio: Math.round((t.mo || 0) * (1 + margenDef / 100)) }] });
 
   const setItem = (id, campo, val) =>
-    setP((x) => ({ ...x, items: x.items.map((i) => (i.id === id ? { ...i, [campo]: val } : i)) }));
+    setP((x) => ({
+      ...x,
+      items: x.items.map((i) => {
+        if (i.id !== id) return i;
+        const n = { ...conPrecio(i), [campo]: val };
+        if (campo === "precio") n.margen = n.costo ? Math.round(((val / n.costo) - 1) * 1000) / 10 : 0;
+        else if (campo === "costo" || campo === "margen") n.precio = Math.round(n.costo * (1 + n.margen / 100));
+        return n;
+      }),
+    }));
+
+  const aplicarMargen = (m) =>
+    setP((x) => ({
+      ...x,
+      items: x.items.map((i) => {
+        const b = conPrecio(i);
+        return { ...b, margen: m, precio: Math.round(b.costo * (1 + m / 100)) };
+      }),
+    }));
 
   const exportar = () => {
     if (p.tipo === "intervencion") {
@@ -2513,10 +2543,10 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
         ["Taller", taller ? taller.n : ""], ["Operador", taller ? taller.ti : ""],
         ["Cliente", cliente.nombre], ["Contacto", cto ? cto.nombre : ""],
         ["Vehículo", modelo ? nombreModelo(modelo) : ""], ["Dominio", p.patente], ["Kilometraje", p.km], [],
-        ["MARCA", "CÓDIGO", "DETALLE", "CANTIDAD", "PRECIO", "SUBTOTAL"],
-        ...items.map((i) => [i.marca, i.cod, i.desc, i.cant, i.precio, (i.cant || 0) * (i.precio || 0)]),
+        ["MARCA", "CÓDIGO", "DETALLE", "CANTIDAD", "COSTO", "MARGEN %", "PRECIO", "SUBTOTAL"],
+        ...lineas.map((i) => [i.marca, i.cod, i.desc, i.cant, i.costo, i.margen, i.precio, (i.cant || 0) * i.precio]),
         ["", "", "MANO DE OBRA", "", "", p.manoObra],
-        [], ["TOTAL PRESUPUESTO", total],
+        [], ["Costo total", subCosto], ["Utilidad", utilidad], ["TOTAL PRESUPUESTO", total],
       ], avisar);
     } else {
       exportarTabla(`tarifario-${cliente.nombre}.csv`, [
@@ -2529,14 +2559,15 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
   };
 
   const registrar = () => {
-    if (!items.length) return avisar("Cargá al menos un servicio antes de registrar.");
+    if (!lineas.length) return avisar("Cargá al menos un servicio antes de registrar.");
     if (!p.patente) return avisar("Falta el dominio del vehículo.");
     upCliente((c) => ({
       ...c,
       historial: [{
         id: uid(), fecha: p.fecha, dominio: p.patente, modeloId: p.modeloId, km: p.km,
         tallerK: p.tallerK, numero: p.numero, estado: "Presupuestado",
-        items: items.map((i) => ({ ...i })), manoObra: p.manoObra || 0, total, notas: "",
+        items: lineas.map((i) => ({ ...i })), manoObra: p.manoObra || 0, total,
+        costo: subCosto, utilidad, notas: "",
       }, ...(c.historial || [])],
     }));
     avisar("Registrado en el historial.");
@@ -2545,7 +2576,7 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
   const descargarPDF = async () => {
     try {
       const doc = p.tipo === "intervencion"
-        ? pdfPresupuesto(p, { cliente, modelo, taller, cto, items, total, config })
+        ? pdfPresupuesto(p, { cliente, modelo, taller, cto, items: lineas, total, config })
         : pdfTarifario(p, cliente);
       if (!doc) { avisar("El generador de PDF no está disponible en esta vista."); return; }
       const nombre = p.tipo === "intervencion"
@@ -2672,11 +2703,14 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
             <SelectorServicios
               tarifario={tarifario}
               upTarifario={upTarifario}
+              margen={margenDef}
+              setMargen={(v) => upConfig("margenDefault", v)}
               elegido={elegido}
               toggle={toggle}
               agregarManual={() => setP((x) => ({
                 ...x,
-                items: [...x.items, { id: uid(), srvId: null, tipo: "rep", marca: "", cod: "", desc: "", cant: 1, precio: 0 }],
+                items: [...x.items, { id: uid(), srvId: null, tipo: "rep", marca: "", cod: "", desc: "", cant: 1,
+                  costo: 0, margen: margenDef, precio: 0 }],
               }))}
             />
           )}
@@ -2686,26 +2720,34 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
               <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.line}` }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>Cotización editable</div>
                 <div style={{ fontSize: 12, color: T.steel }}>
-                  Marca y código del repuesto se completan a mano, igual que en el presupuesto del taller.
+                  Costo y margen son de uso interno: el presupuesto que recibe el cliente muestra
+                  únicamente el precio final.
                 </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 520 }}>
                   <thead>
-                    <tr><Th w={80}>Marca</Th><Th w={85}>Código</Th><Th>Detalle</Th>
-                      <Th align="right" w={55}>Cant.</Th><Th align="right" w={95}>Precio</Th><Th w={30}></Th></tr>
+                    <tr><Th w={72}>Marca</Th><Th w={78}>Código</Th><Th>Detalle</Th>
+                      <Th align="right" w={50}>Cant.</Th><Th align="right" w={85}>Costo</Th>
+                      <Th align="right" w={62}>Margen %</Th><Th align="right" w={88}>Precio</Th>
+                      <Th align="right" w={88}>Subtotal</Th><Th w={28}></Th></tr>
                   </thead>
                   <tbody>
-                    {items.length === 0 && (
+                    {lineas.length === 0 && (
                       <tr><Td><span style={{ color: T.steel }}>Elegí los servicios de arriba.</span></Td></tr>
                     )}
-                    {items.map((i) => (
+                    {lineas.map((i) => (
                       <tr key={i.id}>
                         <Td><Field value={i.marca} onChange={(v) => setItem(i.id, "marca", v.toUpperCase())} /></Td>
                         <Td><Field value={i.cod} onChange={(v) => setItem(i.id, "cod", v.toUpperCase())} /></Td>
                         <Td><Field value={i.desc} onChange={(v) => setItem(i.id, "desc", v)} /></Td>
                         <Td align="right"><NumField value={i.cant} onChange={(v) => setItem(i.id, "cant", v)} /></Td>
+                        <Td align="right"><NumField value={i.costo} onChange={(v) => setItem(i.id, "costo", v)} /></Td>
+                        <Td align="right"><NumField value={i.margen} onChange={(v) => setItem(i.id, "margen", v)} /></Td>
                         <Td align="right"><NumField value={i.precio} onChange={(v) => setItem(i.id, "precio", v)} /></Td>
+                        <Td align="right">
+                          <span style={{ ...num, fontWeight: 600 }}>{ars((i.cant || 0) * i.precio)}</span>
+                        </Td>
                         <Td align="right">
                           <button onClick={() => setP((x) => ({ ...x, items: x.items.filter((y) => y.id !== i.id) }))}
                             style={{ color: T.steel }}><X size={13} /></button>
@@ -2715,16 +2757,45 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
                   </tbody>
                 </table>
               </div>
-              <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-3" style={{ background: T.surface }}>
-                <div className="flex items-center gap-2">
-                  <span style={{ fontSize: 12.5, color: T.steel }}>Mano de obra adicional</span>
-                  <input value={p.manoObra}
-                    onChange={(e) => setP((x) => ({ ...x, manoObra: Number(e.target.value.replace(/\D/g, "")) || 0 }))}
-                    className="outline-none rounded-sm px-2 py-1"
-                    style={{ ...num, fontSize: 13, border: `1px solid ${T.line}`, width: 110, textAlign: "right" }} />
+              <div className="px-4 py-3" style={{ background: T.surface }}>
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span style={{ fontSize: 12.5, color: T.steel }}>Margen a todos los renglones</span>
+                    <input value={margenDef}
+                      onChange={(e) => upConfig("margenDefault", Number(e.target.value.replace(/[^\d.]/g, "")) || 0)}
+                      className="outline-none rounded-sm px-2 py-1"
+                      style={{ ...num, fontSize: 13, border: `1px solid ${T.line}`, width: 62, textAlign: "right" }} />
+                    <span style={{ fontSize: 12.5, color: T.steel }}>%</span>
+                    <Btn small onClick={() => aplicarMargen(margenDef)}>Aplicar</Btn>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontSize: 12.5, color: T.steel }}>Mano de obra adicional</span>
+                    <input value={p.manoObra}
+                      onChange={(e) => setP((x) => ({ ...x, manoObra: Number(e.target.value.replace(/\D/g, "")) || 0 }))}
+                      className="outline-none rounded-sm px-2 py-1"
+                      style={{ ...num, fontSize: 13, border: `1px solid ${T.line}`, width: 100, textAlign: "right" }} />
+                  </div>
                 </div>
-                <div style={{ fontSize: 13 }}>
-                  Total <span style={{ ...num, fontSize: 16, fontWeight: 700, marginLeft: 6 }}>{ars(total)}</span>
+                <div className="flex justify-end gap-6 flex-wrap mt-3 pt-3" style={{ borderTop: `1px solid ${T.line}` }}>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 11, color: T.steel }}>Costo</div>
+                    <div style={{ ...num, fontSize: 14 }}>{ars(subCosto)}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 11, color: T.steel }}>Utilidad</div>
+                    <div style={{ ...num, fontSize: 14, fontWeight: 600, color: utilidad > 0 ? T.ok : T.steel }}>
+                      {ars(utilidad)}
+                      {subCosto > 0 && (
+                        <span style={{ fontSize: 11, color: T.steel, fontWeight: 400 }}>
+                          {" "}· {Math.round((utilidad / subCosto) * 1000) / 10}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 11, color: T.steel }}>Total al cliente</div>
+                    <div style={{ ...num, fontSize: 18, fontWeight: 700 }}>{ars(total)}</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2814,12 +2885,12 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
                   </tr>
                 </thead>
                 <tbody>
-                  {items.length === 0 && (
+                  {lineas.length === 0 && (
                     <tr><td colSpan={6} style={{ fontSize: 11, color: T.steel, padding: "12px 0" }}>
                       Sin renglones cargados.
                     </td></tr>
                   )}
-                  {items.map((i) => (
+                  {lineas.map((i) => (
                     <tr key={i.id}>
                       <Celda>{i.marca}</Celda>
                       <Celda>{i.cod}</Celda>
@@ -3067,7 +3138,7 @@ function TabRed({ data, setData }) {
 
 ReactDOM.createRoot(document.getElementById("raiz")).render(<PanelFlotas />);
 /* ─────────────────────────── selector de servicios ─────────────────────────── */
-function SelectorServicios({ tarifario, upTarifario, elegido, toggle, agregarManual }) {
+function SelectorServicios({ tarifario, upTarifario, elegido, toggle, agregarManual, margen, setMargen }) {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
 
@@ -3086,10 +3157,18 @@ function SelectorServicios({ tarifario, upTarifario, elegido, toggle, agregarMan
           <div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>Servicios a incluir</div>
             <div style={{ fontSize: 12, color: T.steel }}>
-              Tarifario de mano de obra. Los precios se editan acá mismo y valen para todas las cuentas.
+              Costo de mano de obra del taller. Se edita acá y vale para todas las cuentas.
             </div>
           </div>
-          <Btn small icon={Plus} onClick={agregarManual}>Renglón manual</Btn>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ fontSize: 12, color: T.steel }}>Margen</span>
+            <input value={margen}
+              onChange={(e) => setMargen(Number(e.target.value.replace(/[^\d.]/g, "")) || 0)}
+              className="outline-none rounded-sm px-2 py-1"
+              style={{ ...num, width: 64, textAlign: "right", fontSize: 13, border: `1px solid ${T.line}` }} />
+            <span style={{ fontSize: 12, color: T.steel }}>%</span>
+            <Btn small icon={Plus} onClick={agregarManual}>Renglón manual</Btn>
+          </div>
         </div>
         <div className="flex gap-2 mt-3 flex-wrap">
           <select value={cat} onChange={(e) => setCat(e.target.value)}
@@ -3102,11 +3181,16 @@ function SelectorServicios({ tarifario, upTarifario, elegido, toggle, agregarMan
             className="flex-1 outline-none rounded-sm px-2 py-1.5"
             style={{ fontSize: 12.5, border: `1px solid ${T.line}`, minWidth: 180 }} />
         </div>
-        {sinPrecio > 0 && (
-          <div style={{ fontSize: 11.5, color: T.warn, marginTop: 6 }}>
-            {sinPrecio} de {tarifario.length} operaciones todavía no tienen precio cargado.
-          </div>
-        )}
+        <div className="flex justify-between flex-wrap gap-2" style={{ fontSize: 11.5, marginTop: 6 }}>
+          <span style={{ color: sinPrecio ? T.warn : T.steel }}>
+            {sinPrecio > 0
+              ? `${sinPrecio} de ${tarifario.length} operaciones todavía no tienen costo cargado.`
+              : `${tarifario.length} operaciones con costo cargado.`}
+          </span>
+          <span style={{ color: T.steel }}>
+            Columnas: costo del taller · precio al cliente
+          </span>
+        </div>
       </div>
 
       <div style={{ maxHeight: 340, overflowY: "auto" }}>
@@ -3124,13 +3208,19 @@ function SelectorServicios({ tarifario, upTarifario, elegido, toggle, agregarMan
               <div key={t.id} className="flex items-center gap-2 px-4 py-1.5"
                 style={{ borderBottom: `1px solid ${T.lineSoft}` }}>
                 <input type="checkbox" checked={elegido(t.id)} onChange={() => toggle(t)} />
-                <span style={{ fontSize: 12.5, flex: 1, minWidth: 160 }}>{t.desc}</span>
+                <span style={{ fontSize: 12.5, flex: 1, minWidth: 150 }}>{t.desc}</span>
                 <input
                   value={t.mo || 0}
+                  title="Costo de mano de obra"
                   onChange={(e) => upTarifario(t.id, Number(e.target.value.replace(/\D/g, "")) || 0)}
                   className="outline-none rounded-sm px-1.5 py-0.5"
-                  style={{ ...num, width: 92, textAlign: "right", fontSize: 12.5,
+                  style={{ ...num, width: 88, textAlign: "right", fontSize: 12.5,
                            border: `1px solid ${t.mo ? T.line : T.accent}`, color: T.ink }} />
+                <span style={{ ...num, fontSize: 12.5, width: 92, textAlign: "right",
+                               color: margen ? T.accent : T.steel }}
+                  title="Precio al cliente con el margen aplicado">
+                  {ars(Math.round((t.mo || 0) * (1 + (margen || 0) / 100)))}
+                </span>
               </div>
             ))}
           </div>

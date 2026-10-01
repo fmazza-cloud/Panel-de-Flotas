@@ -5,7 +5,8 @@ construida como puente hasta que esté terminado el software de gestión definit
 
 Administra cuentas de flota, la composición de vehículos de cada una, el tarifario
 estandarizado de servicios, la proyección de facturación anual, la red de talleres,
-la emisión de presupuestos en PDF y el historial de mantenimiento por patente.
+la emisión de presupuestos en PDF con margen de utilidad, y el historial de mantenimiento
+por patente.
 
 ---
 
@@ -131,6 +132,35 @@ el presupuesto, para que el cliente vea un importe y no una suma de condiciones.
 
 ---
 
+## Costo, margen y precio
+
+Cada renglón del presupuesto maneja tres valores encadenados:
+
+```
+precio = redondear(costo × (1 + margen / 100))
+```
+
+El **costo** es lo que cobra el taller o lo que sale el repuesto; el **margen** es el porcentaje
+de utilidad; el **precio** es lo que paga el cliente. Los tres son editables y están vinculados
+en ambos sentidos: al cambiar costo o margen se recalcula el precio, y al escribir el precio se
+recalcula el margen hacia atrás, para poder trabajar desde un precio ya negociado.
+
+El margen por defecto se guarda en `config.margenDefault` y se aplica a los renglones nuevos.
+El botón *Aplicar* del pie lo impone sobre todos los renglones del presupuesto.
+
+### Qué ve el cliente
+
+El PDF muestra **únicamente** el precio final y el total. Costo y margen no aparecen en ninguna
+parte del documento: son información interna.
+
+La exportación a Excel del presupuesto **sí** los incluye, porque ese archivo es de uso interno.
+Conviene tenerlo presente antes de reenviarlo.
+
+Al registrar una intervención en el historial se guardan también su costo y su utilidad, lo que
+habilita a futuro abrir el gasto por vehículo en facturación y rentabilidad.
+
+---
+
 ## Historial de mantenimiento
 
 Es el único lugar donde el panel trabaja a nivel **vehículo individual** y no de modelo. La
@@ -227,7 +257,10 @@ Usado para vincular los 23 modelos iniciales, documentado en `docs/`:
 - Matriz de capacidad técnica de los talleres, empezando por AMBA.
 - Motorización de la Peugeot Partner Patagónica, único modelo sin código vinculado.
 - Lógica de asignación de taller cruzando capacidad técnica contra cercanía.
-- Precios de las 67 operaciones de mano de obra, hoy en cero.
+- Costos de las 67 operaciones de mano de obra, hoy en cero.
+- Margen por cuenta: hoy es global, y AVIS y Testigos de Jehová podrían tener condiciones
+  distintas.
+- Exponer costo y utilidad en la pestaña de Historial: el dato ya se guarda.
 - Unificar los dos tarifarios: que la proyección se arme eligiendo operaciones del tarifario
   global y asignándoles una frecuencia por modelo.
 
