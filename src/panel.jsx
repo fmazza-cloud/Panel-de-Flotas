@@ -98,6 +98,7 @@ const nuevaCuenta = (nombre, notas = "") => ({
   alta: new Date().toISOString().slice(0, 10),
   notas,
   modelos: [],
+  historial: [],
 });
 
 const CUENTAS_INICIALES = [
@@ -155,6 +156,7 @@ const seed = {
       estado: "En negociación",
       alta: new Date().toISOString().slice(0, 10),
       notas: "Primer cliente del canal. Detalle de flota recibido: 5 modelos.",
+      historial: [],
       modelos: seedModelos,
     },
     ...CUENTAS_INICIALES.map((n) => {
@@ -166,7 +168,7 @@ const seed = {
       return c;
     }),
   ],
-  config: { v: 9, ipcAcum: 0, ultimoAjuste: null, historial: [] },
+  config: { v: 10, ipcAcum: 0, ultimoAjuste: null, historial: [] },
 };
 
 /* ─────────────────────────── helpers ─────────────────────────── */
@@ -183,6 +185,51 @@ const principal = (c) => {
 
 const nombreModelo = (m) =>
   [m.marca, m.modelo, m.version, m.motor, m.anio].filter(Boolean).join(" ");
+
+/* Kilometraje real medido entre lecturas de odómetro de una misma patente.
+   Se exige una ventana mínima para que la extrapolación no sea ruido. */
+const DIAS_MIN = 45, KM_MIN = 500;
+
+const dias = (a, b) => (new Date(b) - new Date(a)) / 86400000;
+
+function kmPorVehiculo(historial = []) {
+  const porDom = {};
+  historial.forEach((x) => {
+    if (!x.dominio || !x.km) return;
+    (porDom[x.dominio] = porDom[x.dominio] || []).push(x);
+  });
+  return Object.entries(porDom).map(([dominio, ls]) => {
+    const orden = [...ls].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    const pri = orden[0], ult = orden[orden.length - 1];
+    const d = dias(pri.fecha, ult.fecha), dk = (ult.km || 0) - (pri.km || 0);
+    const valido = orden.length >= 2 && d >= DIAS_MIN && dk >= KM_MIN;
+    return {
+      dominio, modeloId: ult.modeloId, lecturas: orden.length, dias: Math.round(d), deltaKm: dk,
+      desde: pri.fecha, hasta: ult.fecha, kmActual: ult.km,
+      kmAnual: valido ? Math.round((dk / d) * 365) : null,
+      motivo: orden.length < 2 ? "una sola lectura"
+        : d < DIAS_MIN ? `solo ${Math.round(d)} días entre lecturas`
+        : dk < KM_MIN ? `solo ${int(dk)} km recorridos` : "",
+    };
+  });
+}
+
+const mediana = (xs) => {
+  if (!xs.length) return 0;
+  const o = [...xs].sort((a, b) => a - b), m = Math.floor(o.length / 2);
+  return o.length % 2 ? o[m] : Math.round((o[m - 1] + o[m]) / 2);
+};
+
+function kmPorModelo(historial = []) {
+  const out = {};
+  kmPorVehiculo(historial).filter((v) => v.kmAnual).forEach((v) => {
+    (out[v.modeloId] = out[v.modeloId] || []).push(v);
+  });
+  return Object.fromEntries(Object.entries(out).map(([id, vs]) => {
+    const ks = vs.map((v) => v.kmAnual);
+    return [id, { mediana: mediana(ks), n: vs.length, min: Math.min(...ks), max: Math.max(...ks) }];
+  }));
+}
 
 function calcModelo(m) {
   let mo = 0, rep = 0;
@@ -386,6 +433,8 @@ function PanelFlotas() {
           d.config = { ...d.config, v: 9 };
         }
         if (!d.tarifario || !d.tarifario.length) d.tarifario = tarifarioInicial();
+        d.clientes = d.clientes.map((c) => ({ ...c, historial: c.historial || [] }));
+        if (!(d.config.v >= 10)) d.config = { ...d.config, v: 10 };
         d.clientes = d.clientes.map((c) =>
           esTJ(c) && !(c.modelos || []).length ? { ...c, modelos: modelosTJ() } : c);
         d.clientes = (d.clientes || []).map((c) => ({
@@ -517,7 +566,7 @@ function PanelFlotas() {
             <button
               title="Agregar cuenta"
               onClick={() => {
-                const c = { id: uid(), nombre: "Nueva cuenta", contactos: [], estado: "En negociación", alta: new Date().toISOString().slice(0, 10), notas: "", modelos: [] };
+                const c = { id: uid(), nombre: "Nueva cuenta", contactos: [], estado: "En negociación", alta: new Date().toISOString().slice(0, 10), notas: "", modelos: [], historial: [] };
                 setData((d) => ({ ...d, clientes: [...d.clientes, c] }));
                 setSelId(c.id);
                 setTab("flota");
@@ -655,6 +704,7 @@ function PanelFlotas() {
                     ["tarifario", "Tarifario por modelo", Wrench],
                     ["proyeccion", "Proyección", TrendingUp],
                     ["presupuesto", "Presupuesto", FileText],
+                    ["historial", "Historial", Clock],
                     ["cuenta", "Ficha y contactos", Building2],
                     ["ajustes", "Ajuste IPC", Settings],
                   ].map(([id, lbl, Icon]) => (
@@ -693,8 +743,9 @@ function PanelFlotas() {
                   <TabTarifario cliente={cliente} upModelo={upModelo}
                     abierto={modeloAbierto ?? cliente.modelos[0]?.id} setAbierto={setModeloAbierto} />
                 )}
-                {tab === "proyeccion" && <TabProyeccion cliente={cliente} k={k} upModelo={upModelo} />}
+                {tab === "proyeccion" && <TabProyeccion cliente={cliente} k={k} upModelo={upModelo} upCliente={upCliente} />}
                 {tab === "presupuesto" && <TabPresupuesto cliente={cliente} upCliente={upCliente} config={data.config} red={data.red} tarifario={data.tarifario || []} upTarifario={upTarifario} />}
+                {tab === "historial" && <TabHistorial cliente={cliente} upCliente={upCliente} red={data.red} />}
                 {tab === "cuenta" && <TabCuenta cliente={cliente} k={k} upCliente={upCliente} />}
                 {tab === "ajustes" && <TabAjustes data={data} setData={setData} />}
               </div>
@@ -1076,7 +1127,14 @@ function CopiarTarifario({ cliente, origen, upModelo }) {
 }
 
 /* ─────────────────────────── proyección ─────────────────────────── */
-function TabProyeccion({ cliente, k, upModelo }) {
+function TabProyeccion({ cliente, k, upModelo, upCliente }) {
+  const medido = useMemo(() => kmPorModelo(cliente.historial || []), [cliente.historial]);
+  const conMedicion = Object.keys(medido).length;
+  const adoptarTodos = () =>
+    upCliente((c) => ({
+      ...c,
+      modelos: c.modelos.map((m) => (medido[m.id] ? { ...m, kmAnual: medido[m.id].mediana, kmMedido: true } : m)),
+    }));
   const max = Math.max(...k.filas.map((f) => f.k.total), 1);
   const canales = [
     ["ETMAN", k.ETMAN, T.accent],
@@ -1091,8 +1149,17 @@ function TabProyeccion({ cliente, k, upModelo }) {
         <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.line}` }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>Facturación anual por modelo</div>
           <div style={{ fontSize: 12, color: T.steel }}>
-            El kilometraje anual promedio determina cuántos servicios genera cada unidad por año. Es editable acá.
+            El kilometraje anual determina cuántos servicios genera cada unidad por año. Es editable acá,
+            o se toma del odómetro cuando el historial lo permite.
           </div>
+          {conMedicion > 0 && (
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              <span style={{ fontSize: 12, color: T.ok }}>
+                {conMedicion} de {cliente.modelos.length} modelos tienen kilometraje medido.
+              </span>
+              <Btn small onClick={adoptarTodos}>Usar los medidos</Btn>
+            </div>
+          )}
         </div>
         <div className="px-4 py-4">
           {k.filas.map(({ m, k: km }) => (
@@ -1111,6 +1178,22 @@ function TabProyeccion({ cliente, k, upModelo }) {
                   className="outline-none rounded-sm px-1.5 py-0.5"
                   style={{ ...num, width: 78, textAlign: "right", fontSize: 11.5, border: `1px solid ${T.line}`, color: T.ink }} />
                 <span>· {km.eventosUnidad.toFixed(1)} servicios al año por unidad · {ars(km.unidad)} por unidad</span>
+                {medido[m.id] ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span style={{ color: T.ok }}>
+                      medido {int(medido[m.id].mediana)} km/año
+                      {medido[m.id].n > 1
+                        ? ` · ${medido[m.id].n} unidades, de ${int(medido[m.id].min)} a ${int(medido[m.id].max)}`
+                        : " · 1 unidad"}
+                    </span>
+                    {m.kmAnual !== medido[m.id].mediana && (
+                      <button onClick={() => upModelo(m.id, (x) => ({ ...x, kmAnual: medido[m.id].mediana, kmMedido: true }))}
+                        style={{ color: T.accent, fontSize: 11.5 }}>usar</button>
+                    )}
+                  </span>
+                ) : (
+                  <span style={{ color: T.steel }}>· estimado</span>
+                )}
               </div>
               <div className="flex" style={{ height: 14, background: T.lineSoft }}>
                 <div style={{ width: `${(km.moTotal / max) * 100}%`, background: T.ink }} />
@@ -1740,6 +1823,20 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
     }
   };
 
+  const registrar = () => {
+    if (!items.length) return avisar("Cargá al menos un servicio antes de registrar.");
+    if (!p.patente) return avisar("Falta el dominio del vehículo.");
+    upCliente((c) => ({
+      ...c,
+      historial: [{
+        id: uid(), fecha: p.fecha, dominio: p.patente, modeloId: p.modeloId, km: p.km,
+        tallerK: p.tallerK, numero: p.numero, estado: "Presupuestado",
+        items: items.map((i) => ({ ...i })), manoObra: p.manoObra || 0, total, notas: "",
+      }, ...(c.historial || [])],
+    }));
+    avisar("Registrado en el historial.");
+  };
+
   const descargarPDF = async () => {
     try {
       const doc = p.tipo === "intervencion"
@@ -1794,6 +1891,9 @@ function TabPresupuesto({ cliente, upCliente, config, red = [], tarifario = [], 
         <div className="flex-1" />
         {aviso && <span style={{ fontSize: 12, color: T.ok }}>{aviso}</span>}
         <Btn small icon={Download} onClick={exportar}>Exportar a Excel</Btn>
+        {p.tipo === "intervencion" && (
+          <Btn small icon={Clock} onClick={registrar}>Registrar en historial</Btn>
+        )}
         <Btn small tone="accent" icon={Printer} onClick={descargarPDF}>Descargar PDF</Btn>
       </div>
 
@@ -2423,6 +2523,285 @@ function TabTarifarioGlobal({ data, setData }) {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── historial de mantenimiento ─────────────────────────── */
+const ESTADOS = ["Presupuestado", "Autorizado", "Realizado", "Rechazado"];
+const COLOR_ESTADO = {
+  Presupuestado: T.steel, Autorizado: "#9A6400", Realizado: T.ok, Rechazado: "#9E3B3B",
+};
+
+function TabHistorial({ cliente, upCliente, red = [] }) {
+  const [modo, setModo] = useState("vehiculo");
+  const [q, setQ] = useState("");
+  const [estado, setEstado] = useState("");
+  const [abierto, setAbierto] = useState(null);
+  const [aviso, setAviso] = useState("");
+  const avisar = (m) => { setAviso(m); setTimeout(() => setAviso(""), 4000); };
+
+  const h = cliente.historial || [];
+  const nombreDe = (id) => {
+    const m = cliente.modelos.find((x) => x.id === id);
+    return m ? nombreModelo(m) : "Modelo no identificado";
+  };
+  const tallerDe = (k) => {
+    const t = red.find((x) => x.k === k);
+    return t ? `${t.n} · ${t.l}` : "";
+  };
+
+  const up = (id, campo, val) =>
+    upCliente((c) => ({ ...c, historial: c.historial.map((x) => (x.id === id ? { ...x, [campo]: val } : x)) }));
+  const borrar = (id) => {
+    if (!window.confirm("¿Eliminar esta intervención del historial?")) return;
+    upCliente((c) => ({ ...c, historial: c.historial.filter((x) => x.id !== id) }));
+  };
+  const agregar = () =>
+    upCliente((c) => ({
+      ...c,
+      historial: [{
+        id: uid(), fecha: hoy(), dominio: "", modeloId: c.modelos[0]?.id || "", km: 0,
+        tallerK: "", numero: "", estado: "Realizado", items: [], manoObra: 0, total: 0,
+        notas: "Carga manual",
+      }, ...(c.historial || [])],
+    }));
+
+  const vis = h.filter((x) => {
+    if (estado && x.estado !== estado) return false;
+    if (!q) return true;
+    return `${x.dominio} ${nombreDe(x.modeloId)} ${x.numero}`.toLowerCase().includes(q.toLowerCase());
+  }).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+
+  const realizadas = h.filter((x) => x.estado === "Realizado");
+  const gastado = realizadas.reduce((a, x) => a + (x.total || 0), 0);
+  const dominios = [...new Set(h.map((x) => x.dominio).filter(Boolean))];
+
+  const medidos = Object.fromEntries(kmPorVehiculo(h).map((v) => [v.dominio, v]));
+
+  const porVehiculo = dominios.map((d) => {
+    const ivs = h.filter((x) => x.dominio === d).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const hechas = ivs.filter((x) => x.estado === "Realizado");
+    return {
+      dominio: d, ivs,
+      modelo: nombreDe(ivs[0].modeloId),
+      ultima: ivs[0].fecha,
+      km: Math.max(...ivs.map((x) => x.km || 0)),
+      total: hechas.reduce((a, x) => a + (x.total || 0), 0),
+      cantidad: ivs.length,
+      med: medidos[d],
+    };
+  }).filter((v) => !q || `${v.dominio} ${v.modelo}`.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => String(b.ultima).localeCompare(String(a.ultima)));
+
+  const exportar = () =>
+    exportarTabla(`historial-${cliente.nombre}.xlsx`, [
+      ["HISTORIAL DE MANTENIMIENTO"], ["Cliente", cliente.nombre], ["Emitido", fechaAR(hoy())], [],
+      ["Fecha", "Dominio", "Vehículo", "Km", "Km/año medido", "Taller", "N° presup.", "Estado", "Detalle", "Importe"],
+      ...vis.flatMap((x) => {
+        const md = medidos[x.dominio];
+        const cab = [fechaAR(x.fecha), x.dominio, nombreDe(x.modeloId), x.km,
+                     md && md.kmAnual ? md.kmAnual : "", tallerDe(x.tallerK),
+                     x.numero, x.estado, "", x.total];
+        const det = (x.items || []).map((i) => ["", "", "", "", "", "", "", "",
+          `${i.cod ? i.cod + " · " : ""}${i.desc}`, (i.cant || 0) * (i.precio || 0)]);
+        return [cab, ...det];
+      }),
+    ], avisar);
+
+  const Detalle = ({ x }) => (
+    <tr>
+      <Td pad="px-2 pb-3" align="left">
+        <div style={{ background: T.surface, border: `1px solid ${T.lineSoft}` }} className="px-3 py-2">
+          <div className="flex gap-4 flex-wrap mb-2" style={{ fontSize: 12 }}>
+            <span style={{ color: T.steel }}>Taller: <span style={{ color: T.ink }}>{tallerDe(x.tallerK) || "—"}</span></span>
+            <span style={{ color: T.steel }}>Presupuesto: <span style={{ ...num, color: T.ink }}>{x.numero || "—"}</span></span>
+            <span style={{ color: T.steel }}>Mano de obra adicional: <span style={{ ...num, color: T.ink }}>{ars(x.manoObra)}</span></span>
+          </div>
+          {(x.items || []).length === 0 && (
+            <div style={{ fontSize: 12, color: T.steel }}>Sin detalle cargado.</div>
+          )}
+          {(x.items || []).map((i) => (
+            <div key={i.id} className="flex justify-between gap-3 py-0.5" style={{ fontSize: 12 }}>
+              <span>
+                <span style={{ ...num, color: T.steel, marginRight: 6 }}>{i.cod || "—"}</span>
+                {i.desc}
+                {i.cant > 1 && <span style={{ color: T.steel }}> · {i.cant} u.</span>}
+              </span>
+              <span style={{ ...num }}>{ars((i.cant || 0) * (i.precio || 0))}</span>
+            </div>
+          ))}
+          <input value={x.notas || ""} placeholder="Observaciones de la intervención"
+            onChange={(e) => up(x.id, "notas", e.target.value)}
+            className="w-full outline-none rounded-sm px-2 py-1 mt-2"
+            style={{ fontSize: 12, border: `1px solid ${T.line}`, background: T.paper }} />
+        </div>
+      </Td>
+    </tr>
+  );
+
+  return (
+    <div>
+      <div style={{ background: T.paper, border: `1px solid ${T.line}` }} className="mb-4">
+        <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap"
+          style={{ borderBottom: `1px solid ${T.line}` }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Historial de mantenimiento</div>
+            <div style={{ fontSize: 12, color: T.steel }}>
+              Se alimenta solo desde la pestaña Presupuesto, con el botón «Registrar en historial».
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {aviso && <span style={{ fontSize: 12, color: T.ok }}>{aviso}</span>}
+            <Btn small icon={Plus} onClick={agregar}>Carga manual</Btn>
+            <Btn small icon={Download} onClick={exportar}>Exportar a Excel</Btn>
+          </div>
+        </div>
+        <div className="flex flex-wrap">
+          <Stat label="Intervenciones" value={int(h.length)} sub={`${realizadas.length} realizadas`} accent />
+          <Stat label="Vehículos con historial" value={int(dominios.length)}
+            sub={`de ${int(cliente.modelos.reduce((a, m) => a + (m.cant || 0), 0))} unidades en flota`} />
+          <Stat label="Con km/año medido"
+          value={`${kmPorVehiculo(h).filter((v) => v.kmAnual).length} / ${dominios.length}`}
+          sub="requiere 2 lecturas separadas" />
+        <Stat label="Gasto acumulado" value={ars(gastado)} sub="solo intervenciones realizadas" />
+          <Stat label="Ticket promedio" value={ars(realizadas.length ? gastado / realizadas.length : 0)}
+            sub="por intervención realizada" />
+        </div>
+      </div>
+
+      <div className="flex gap-2 mb-3 flex-wrap items-center">
+        {[["vehiculo", "Por vehículo"], ["fecha", "Por intervención"]].map(([id, lbl]) => (
+          <button key={id} onClick={() => setModo(id)} className="px-3 py-1.5 rounded-sm"
+            style={{
+              fontSize: 12.5, background: modo === id ? T.ink : T.paper,
+              color: modo === id ? "#fff" : T.inkSoft,
+              border: `1px solid ${modo === id ? T.ink : T.line}`,
+            }}>{lbl}</button>
+        ))}
+        <select value={estado} onChange={(e) => setEstado(e.target.value)}
+          className="outline-none rounded-sm px-2 py-1.5"
+          style={{ fontSize: 12.5, border: `1px solid ${T.line}`, background: T.paper }}>
+          <option value="">Todos los estados</option>
+          {ESTADOS.map((e) => <option key={e}>{e}</option>)}
+        </select>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por dominio, modelo o presupuesto"
+          className="flex-1 outline-none rounded-sm px-2 py-1.5"
+          style={{ fontSize: 12.5, border: `1px solid ${T.line}`, minWidth: 220 }} />
+      </div>
+
+      {h.length === 0 ? (
+        <div style={{ background: T.paper, border: `1px solid ${T.line}` }} className="px-5 py-8">
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Todavía no hay intervenciones</div>
+          <div style={{ fontSize: 13, color: T.steel, maxWidth: 620 }}>
+            Armá un presupuesto en la pestaña anterior, cargá el dominio del vehículo y usá
+            «Registrar en historial». Para trabajos anteriores al panel, usá la carga manual.
+          </div>
+        </div>
+      ) : modo === "vehiculo" ? (
+        <div style={{ background: T.paper, border: `1px solid ${T.line}` }}>
+          <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <thead><tr>
+              <Th w={100}>Dominio</Th><Th>Vehículo</Th><Th align="right" w={90}>Últ. km</Th>
+              <Th align="right" w={135}>Km / año medido</Th>
+              <Th align="right" w={70}>Interv.</Th><Th w={95}>Última</Th><Th align="right" w={115}>Gasto acum.</Th>
+            </tr></thead>
+            <tbody>
+              {porVehiculo.map((v) => (
+                <React.Fragment key={v.dominio}>
+                  <tr onClick={() => setAbierto(abierto === v.dominio ? null : v.dominio)} style={{ cursor: "pointer" }}>
+                    <Td><span style={{ ...num, fontWeight: 600 }}>{v.dominio}</span></Td>
+                    <Td>{v.modelo}</Td>
+                    <Td align="right"><span style={num}>{int(v.km)}</span></Td>
+                    <Td align="right">
+                      {v.med && v.med.kmAnual ? (
+                        <span style={{ ...num, color: T.ok, fontWeight: 600 }}>{int(v.med.kmAnual)}</span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: T.steel }}
+                          title={v.med ? "Se necesitan dos lecturas separadas al menos 45 días y 500 km" : ""}>
+                          {v.med ? v.med.motivo : "—"}
+                        </span>
+                      )}
+                    </Td>
+                    <Td align="right"><span style={num}>{v.cantidad}</span></Td>
+                    <Td><span style={{ ...num, fontSize: 12 }}>{fechaAR(v.ultima)}</span></Td>
+                    <Td align="right"><span style={{ ...num, fontWeight: 600 }}>{ars(v.total)}</span></Td>
+                  </tr>
+                  {abierto === v.dominio && v.ivs.map((x) => (
+                    <tr key={x.id}>
+                      <Td pad="px-2 pb-2" align="left">
+                        <div style={{ background: T.surface, border: `1px solid ${T.lineSoft}` }} className="px-3 py-2">
+                          <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+                            <span style={{ ...num, fontSize: 12.5, fontWeight: 600 }}>
+                              {fechaAR(x.fecha)} · {int(x.km)} km
+                            </span>
+                            <span style={{ fontSize: 11.5, color: COLOR_ESTADO[x.estado] }}>{x.estado}</span>
+                            <span style={{ ...num, fontSize: 13, fontWeight: 600 }}>{ars(x.total)}</span>
+                          </div>
+                          {(x.items || []).map((i) => (
+                            <div key={i.id} style={{ fontSize: 12, color: T.inkSoft }}>· {i.desc}</div>
+                          ))}
+                        </div>
+                      </Td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ background: T.paper, border: `1px solid ${T.line}` }}>
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ borderCollapse: "collapse", minWidth: 860 }}>
+              <thead><tr>
+                <Th w={95}>Fecha</Th><Th w={95}>Dominio</Th><Th>Vehículo</Th>
+                <Th align="right" w={85}>Km</Th><Th w={135}>Estado</Th>
+                <Th align="right" w={110}>Importe</Th><Th w={60}></Th>
+              </tr></thead>
+              <tbody>
+                {vis.map((x) => (
+                  <React.Fragment key={x.id}>
+                    <tr>
+                      <Td>
+                        <input type="date" value={x.fecha || ""} onChange={(e) => up(x.id, "fecha", e.target.value)}
+                          className="outline-none bg-transparent" style={{ fontSize: 12, color: T.ink }} />
+                      </Td>
+                      <Td><Field value={x.dominio} onChange={(v) => up(x.id, "dominio", v.toUpperCase())} /></Td>
+                      <Td>
+                        <select value={x.modeloId} onChange={(e) => up(x.id, "modeloId", e.target.value)}
+                          className="w-full outline-none bg-transparent" style={{ fontSize: 12.5, border: "none" }}>
+                          {cliente.modelos.map((m) => <option key={m.id} value={m.id}>{nombreModelo(m)}</option>)}
+                        </select>
+                      </Td>
+                      <Td align="right"><NumField value={x.km} onChange={(v) => up(x.id, "km", v)} /></Td>
+                      <Td>
+                        <select value={x.estado} onChange={(e) => up(x.id, "estado", e.target.value)}
+                          className="outline-none rounded-sm px-1.5 py-0.5"
+                          style={{ fontSize: 11.5, color: COLOR_ESTADO[x.estado], background: T.paper,
+                                   border: `1px solid ${T.line}` }}>
+                          {ESTADOS.map((e) => <option key={e}>{e}</option>)}
+                        </select>
+                      </Td>
+                      <Td align="right"><span style={{ ...num, fontWeight: 600 }}>{ars(x.total)}</span></Td>
+                      <Td align="right">
+                        <button onClick={() => setAbierto(abierto === x.id ? null : x.id)}
+                          style={{ color: T.accent, fontSize: 11.5 }}>
+                          {abierto === x.id ? "cerrar" : "ver"}
+                        </button>
+                        <button onClick={() => borrar(x.id)} style={{ color: T.steel, marginLeft: 6 }}>
+                          <X size={13} />
+                        </button>
+                      </Td>
+                    </tr>
+                    {abierto === x.id && <Detalle x={x} />}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,8 +4,8 @@ Herramienta de gestión comercial y operativa del Canal de Flotas de la Red Euro
 construida como puente hasta que esté terminado el software de gestión definitivo.
 
 Administra cuentas de flota, la composición de vehículos de cada una, el tarifario
-estandarizado de servicios, la proyección de facturación anual, la red de talleres y
-la emisión de presupuestos en PDF.
+estandarizado de servicios, la proyección de facturación anual, la red de talleres,
+la emisión de presupuestos en PDF y el historial de mantenimiento por patente.
 
 ---
 
@@ -99,6 +99,7 @@ corregir o incorporar datos sin que nadie pierda lo que venía cargando.
 | 7 | Corrige las cilindradas de las Sprinter según la tabla |
 | 8 | Incorpora el tarifario global de mano de obra |
 | 9 | Elimina del tarifario los renglones condicionales de recargo |
+| 10 | Inicializa el historial de mantenimiento en cada cuenta |
 
 Para agregar una migración se suma un bloque `if (!(d.config.v >= N))` en la rutina de carga
 y se incrementa la versión de la semilla.
@@ -127,6 +128,46 @@ un presupuesto puntual sin tocar el tarifario, se modifica el renglón en la tab
 Los recargos condicionales del archivo original ("si tiene GNC sobre la distribución: sumar")
 se eliminaron deliberadamente: ese ajuste se hace subiendo la mano de obra de la operación en
 el presupuesto, para que el cliente vea un importe y no una suma de condiciones.
+
+---
+
+## Historial de mantenimiento
+
+Es el único lugar donde el panel trabaja a nivel **vehículo individual** y no de modelo. La
+unidad se identifica por su dominio.
+
+No tiene carga propia: se alimenta desde la pestaña Presupuesto con el botón *Registrar en
+historial*, que toma el documento ya armado con su dominio, kilometraje, taller y renglones.
+Duplicar la carga garantizaría que el historial quede incompleto. Para trabajos anteriores al
+panel existe una carga manual.
+
+Cada intervención tiene estado: Presupuestado, Autorizado, Realizado o Rechazado. Los
+indicadores cuentan solo las realizadas, de modo que el gasto acumulado refleja trabajo hecho
+y la relación entre ambos da la tasa de conversión de presupuestos.
+
+### Kilometraje medido
+
+El kilometraje anual deja de ser una estimación cuando hay lecturas de odómetro suficientes.
+Se calcula por patente entre la primera y la última lectura, no entre consecutivas, porque la
+ventana más larga es la más estable:
+
+```
+km/año = (km_última − km_primera) / días × 365
+```
+
+Condiciones mínimas: dos lecturas separadas por al menos **45 días y 500 km**. Por debajo de
+eso no se reporta nada y se indica el motivo, porque extrapolar a un año desde una ventana
+corta amplifica el ruido.
+
+Cuando un modelo tiene varias patentes medidas se usa la **mediana**, no el promedio: con usos
+muy dispares el promedio no describe a ninguna unidad. La interfaz muestra cuántas unidades
+entraron y el rango mínimo-máximo, de modo que una dispersión amplia sea visible y no quede
+escondida detrás de un único número.
+
+Cuentan todas las intervenciones con kilometraje, incluidas las rechazadas: la lectura del
+odómetro es un dato real aunque el trabajo no se haya hecho.
+
+Constantes en `src/panel.jsx`: `DIAS_MIN`, `KM_MIN`.
 
 ---
 
@@ -180,7 +221,8 @@ Usado para vincular los 23 modelos iniciales, documentado en `docs/`:
 
 ## Pendientes
 
-- Kilometraje anual y distribución geográfica de las flotas de AVIS y Testigos de Jehová.
+- Distribución geográfica de las flotas de AVIS y Testigos de Jehová.
+- Aviso de servicios próximos a vencer según el último kilometraje de cada patente.
 - Precios del tarifario, hoy en cero.
 - Matriz de capacidad técnica de los talleres, empezando por AMBA.
 - Motorización de la Peugeot Partner Patagónica, único modelo sin código vinculado.

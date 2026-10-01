@@ -31,3 +31,5 @@ const TrendingUp = svg("M22 7 13.5 15.5l-5-5L2 17", "M16 7h6v6");
 const Settings = svg("M4 21v-7", "M4 10V3", "M12 21v-9", "M12 8V3", "M20 21v-5", "M20 12V3", "M1 14h6", "M9 8h6", "M17 16h6");
 const AlertCircle = svg(cir(12, 12, 10), "M12 8v4", "M12 16h.01");
 const Wand2 = svg("m3 21 8-8", "M14 4l1.2 2.4L18 7.5l-2.4 1.2L14 11l-1.2-2.3L10 7.5l2.4-1.1z", "M19 13l.8 1.6L21.5 15l-1.6.8L19 17.5l-.8-1.7L16.5 15l1.7-.8z");
+
+const Clock = svg(cir(12, 12, 10), "M12 6v6l4 2");
