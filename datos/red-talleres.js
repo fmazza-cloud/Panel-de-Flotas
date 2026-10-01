@@ -83,29 +83,3 @@ const RED_SEED = [{"n":"MECANICA CASSANO","l":"Bahia Blanca","p":"BUENOS AIRES",
 {"n":"AUTOTECH","l":"Villa Nueva","p":"CORDOBA","d":"","t":"","e":"","ti":"Luis Pivetta","id":"21362","c":"Fabio","g":""},
 {"n":"MECANICA DEPETRIS","l":"Calchin","p":"CORDOBA","d":"","t":"","e":"","ti":"Fabrizio Depetris","id":"21368","c":"Fabio","g":""},
 {"n":"MERCO PLUS","l":"Resistencia","p":"CHACO","d":"","t":"","e":"","ti":"Nicolas Mouhape","id":"9230","c":"Fabio","g":""}];
-
-const RUBROS = ["Mecánica general","Diésel e inyección","Electricidad","Tren delantero y alineación",
-  "Frenos","Embrague","Aire acondicionado","Neumáticos"];
-
-const redInicial = () =>
-  RED_SEED.map((t) => ({ ...t, k: uid(), rubros: [], bahias: 0, pickup: false, notas: "" }));
-
-const sinTildes = (t) =>
-  String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
-const esTJ = (c) => sinTildes(c.nombre).includes("TESTIGOS");
-
-const nuevaCuenta = (nombre, notas = "") => ({
-  id: uid(),
-  nombre,
-  contactos: [],
-  estado: "En negociación",
-  alta: new Date().toISOString().slice(0, 10),
-  notas,
-  modelos: [],
-});
-
-const CUENTAS_INICIALES = [
-  "ASOCIACION DE LOS TESTIGOS DE JEHOVA",
-  "South Post",
-  "Always",
-];

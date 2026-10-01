@@ -80,6 +80,33 @@ const seedModelos = [
 
 /*@@RED_TALLERES@@*/
 
+const RUBROS = ["Mecánica general","Diésel e inyección","Electricidad","Tren delantero y alineación",
+  "Frenos","Embrague","Aire acondicionado","Neumáticos"];
+
+const redInicial = () =>
+  RED_SEED.map((t) => ({ ...t, k: uid(), rubros: [], bahias: 0, pickup: false, notas: "" }));
+
+const sinTildes = (t) =>
+  String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+const esTJ = (c) => sinTildes(c.nombre).includes("TESTIGOS");
+
+const nuevaCuenta = (nombre, notas = "") => ({
+  id: uid(),
+  nombre,
+  contactos: [],
+  estado: "En negociación",
+  alta: new Date().toISOString().slice(0, 10),
+  notas,
+  modelos: [],
+});
+
+const CUENTAS_INICIALES = [
+  "ASOCIACION DE LOS TESTIGOS DE JEHOVA",
+  "South Post",
+  "Always",
+];
+
+
 /*@@TARIFARIO@@*/
 
 /* Flota Asociación de los Testigos de Jehová — 136 unidades (detalle recibido por PDF) */
@@ -111,6 +138,11 @@ const modelosTJ = () =>
     codigos: CODIGOS_ASIGNADOS[[marca, modelo, version, motor, anio].filter(Boolean).join(" ")] || [],
     servicios: svcBase(comb, { base, correa }),
   }));
+
+const CATEGORIAS = ["SERVICIO", "ENCENDIDO", "FRENOS", "TREN DELANTERO", "DISTRIBUCION", "EMBRAGUE"];
+
+const tarifarioInicial = () =>
+  TARIFARIO_SEED.map(([cat, desc]) => ({ id: uid(), cat, desc, mo: 0 }));
 
 const seed = {
   red: redInicial(),

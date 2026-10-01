@@ -743,6 +743,7 @@ const CUENTAS_INICIALES = [
   "Always",
 ];
 
+
 const TARIFARIO_SEED = [["SERVICIO","Cambio de aceite, filtro de aceite, filtro de aire (AUTO) (incluye compl niv)"],
 ["SERVICIO","Cambio de aceite y todos los filtros (AUTO NAFTA) (incluye compl niv)"],
 ["SERVICIO","Cambio de aceite y todos los filtros (AUTO DIESEL) (incluye compl niv)"],
@@ -840,6 +841,11 @@ const modelosTJ = () =>
     codigos: CODIGOS_ASIGNADOS[[marca, modelo, version, motor, anio].filter(Boolean).join(" ")] || [],
     servicios: svcBase(comb, { base, correa }),
   }));
+
+const CATEGORIAS = ["SERVICIO", "ENCENDIDO", "FRENOS", "TREN DELANTERO", "DISTRIBUCION", "EMBRAGUE"];
+
+const tarifarioInicial = () =>
+  TARIFARIO_SEED.map(([cat, desc]) => ({ id: uid(), cat, desc, mo: 0 }));
 
 const seed = {
   red: redInicial(),
